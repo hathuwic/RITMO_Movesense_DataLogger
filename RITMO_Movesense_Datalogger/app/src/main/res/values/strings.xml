@@ -1,21 +1,25 @@
 <resources>
     <string name="app_name">RITMO Movesense DataLogger</string>
-    <string name="title_activity_datalogger">Start/Stop/Download Log</string>
-    <string name="instructions_text">This app demonstrates the use of DataLogger and Logbook APIs on Movesense sensor. First scan for BLE devices and then connect to it by clicking it on the list. After connection in established, DataLogger view will open.</string>
+    <string name="title_activity_datalogger">Device: </string>
+    <string name="instructions_text">This app lets you to log data to and download data from multiple Movesense devices. First scan for Movesense Bluetooth devices and then tap to connect to a device. DataLogger view will open when a connection is established.\n\nNOTE: Re-scanning will disconnect connected devices. They will continue logging while disconnected.</string>
     <string name="datalogger_state">DataLogger state:</string>
-    <string name="help_text_datalogger">In this view you can start and stop logging of resource(s) and list Logbook entries. Tap an entry to get the log content as a JSON file.</string>
+    <string name="help_text_datalogger">Here you can start and stop logging of resource(s) and list Logbook entries. Tap an entry to get the log content as a JSON file.</string>
     <string name="start_logging">Start Logging</string>
     <string name="stop_logging">Stop Logging</string>
     <string name="refresh_logbook_list">Refresh logbook list</string>
     <string-array name="datalogger_paths">
         <item>Select a path...</item>
-        <item>/Meas/Acc/104</item>
-        <item>/Meas/IMU9/52</item>
-        <item>/Meas/ECG/250</item>
-        <item>/Meas/HR</item>
-        <item>/Algo/ECGRR</item>
-        <item>/Meas/IMU9/52:/Meas/ECG/500</item>
-        <item>/Meas/IMU9/104:/Meas/ECG/500</item>
         <item>/Meas/IMU9/208:/Meas/ECG/500</item>
     </string-array>
 </resources>
+
+<!--
+<item>/Meas/IMU9/208</item>
+<item>/Meas/ECG/500</item>
+<item>/Meas/HR</item>
+<item>/Algo/ECGRR</item>
+<item>/Meas/Acc/104</item>
+<item>/Meas/IMU9/52:/Meas/ECG/500</item>
+<item>/Meas/IMU9/104:/Meas/ECG/500</item>
+
+-->

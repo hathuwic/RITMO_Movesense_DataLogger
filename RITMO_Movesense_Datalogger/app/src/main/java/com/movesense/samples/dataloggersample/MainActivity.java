@@ -13,6 +13,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -50,6 +51,8 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
     private ListView mScanResultListView;
     private static ArrayList<MyScanResult> mScanResArrayList = new ArrayList<>();
     ArrayAdapter<MyScanResult> mScanResArrayAdapter;
+
+    private boolean isConnecting = false;
 
 
     @Override
@@ -114,6 +117,23 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
         findViewById(R.id.buttonScan).setVisibility(View.GONE);
         findViewById(R.id.buttonScanStop).setVisibility(View.VISIBLE);
 
+        TextView scanListText = (TextView)findViewById(R.id.scanListText);
+        scanListText.setText("Select a device to connect to...");
+
+        // Disconnect from any already connected devices so they show in the list, otherwise notify no devices connected
+        if (mScanResArrayList.size() != 0 || mScanResArrayList != null) {
+            for (MyScanResult device : mScanResArrayList) {
+                if (device != null && device.connectedSerial != null) {
+                    Log.i(LOG_TAG, "Disconnecting from BLE device: " + device.macAddress);
+                    mMds.disconnect(device.macAddress);
+                    Toast.makeText(MainActivity.this, "Disconnected from: " + device.connectedSerial, Toast.LENGTH_SHORT).show();
+                }
+            }
+        }
+        else {
+            Toast.makeText(MainActivity.this, "No devices to disconnect.", Toast.LENGTH_LONG).show();
+        }
+
         // Start with empty list
         mScanResArrayList.clear();
         mScanResArrayAdapter.notifyDataSetChanged();
@@ -129,27 +149,27 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
                 .subscribe(
                         scanResult -> {
                             Log.d(LOG_TAG,"scanResult: " + scanResult);
-                            Toast.makeText(MainActivity.this, "scanResult: " + scanResult, Toast.LENGTH_LONG).show();
+                            // Toast.makeText(MainActivity.this, "scanResult: " + scanResult, Toast.LENGTH_LONG).show();
 
                             // Process scan result here. filter movesense devices.
                             if (scanResult.getBleDevice()!=null &&
                                     scanResult.getBleDevice().getName() != null &&
-                                    (scanResult.getBleDevice().getName().startsWith("Movesense") ||
-                                    scanResult.getBleDevice().getName().startsWith("*"))) {
+                                    scanResult.getBleDevice().getName().startsWith("Movesense")) {
 
-                                // replace if exists already, add otherwise
+                                // Replace if exists already, add otherwise
                                 MyScanResult msr = new MyScanResult(scanResult);
                                 if (mScanResArrayList.contains(msr))
                                     mScanResArrayList.set(mScanResArrayList.indexOf(msr), msr);
                                 else
-                                    mScanResArrayList.add(0, msr);
+                                    // Should add newly found devices to the end of the list
+                                    mScanResArrayList.add(mScanResArrayList.size(), msr);
 
                                 mScanResArrayAdapter.notifyDataSetChanged();
                             }
                         },
                         throwable -> {
                             Log.e(LOG_TAG,"scan error: " + throwable);
-                            Toast.makeText(this, "Scan error: " + throwable, Toast.LENGTH_LONG).show();
+//                            Toast.makeText(this, "Scan error: " + throwable, Toast.LENGTH_LONG).show();
                             // Handle an error here.
 
                             // Re-enable scan buttons, just like with ScanStop
@@ -176,18 +196,39 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
             return;
 
         MyScanResult device = mScanResArrayList.get(position);
+        // If the device not already connected via Bluetooth
         if (!device.isConnected()) {
             // Stop scanning
             onScanStopClicked(null);
 
+            // Mark as currently connecting to a sensor and disable scan button
+            if (!isConnecting) {
+                isConnecting = true;
+                findViewById(R.id.buttonScan).setEnabled(false);
+            }
+
             // Update scanListText
             TextView scanListText = (TextView)findViewById(R.id.scanListText);
-            String scanListTextString = "Connecting to device " + device + "...";
+            String scanListTextString = "Connecting to device: " +
+                    device.name;    //toString().substring(device.toString().indexOf("se ")+3, device.toString().indexOf(" ["));
             scanListText.setText(scanListTextString);
 
             // And connect to the device
             connectBLEDevice(device);
         }
+        // If the device is already connected via Bluetooth
+//        else if (device.isConnected()) {
+//            // Update scanListText
+//            TextView scanListText = (TextView)findViewById(R.id.scanListText);
+//            String scanListTextString = "Rejoining device: " + device.name;
+//            scanListText.setText(scanListTextString);
+//
+//            // Open the DataLoggerActivity
+////            Toast.makeText(MainActivity.this, "Device already connected: " + device.connectedSerial, Toast.LENGTH_LONG).show();
+//            Intent intent = new Intent(MainActivity.this, DataLoggerActivity.class);
+//            intent.putExtra(DataLoggerActivity.SERIAL, device.connectedSerial);
+//            startActivity(intent);
+//        }
     }
 
     @Override
@@ -199,11 +240,16 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
 
         Log.i(LOG_TAG, "Disconnecting from BLE device: " + device.macAddress);
         mMds.disconnect(device.macAddress);
+//        Toast.makeText(MainActivity.this, "Disconnected from: " + device.connectedSerial, Toast.LENGTH_LONG).show();
+        device.markDisconnected();
 
         return true;
     }
 
     private void connectBLEDevice(MyScanResult device) {
+        // Disables scan button when connecting to a device
+
+
         RxBleDevice bleDevice = getBleClient().getBleDevice(device.macAddress);
         final Activity me = this;
         Log.i(LOG_TAG, "Connecting to BLE device: " + bleDevice.getMacAddress());
@@ -227,7 +273,14 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
                 // Set sensor clock
                 setCurrentTimeToSensor(serial);
 
+                // Re-enables scan button once connected to device
+                if (isConnecting) {
+                    isConnecting = false;
+                    findViewById(R.id.buttonScan).setEnabled(true);
+                }
+
                 // Open the DataLoggerActivity
+//                Toast.makeText(MainActivity.this, "Starting to open DataLogger activity.", Toast.LENGTH_LONG).show();
                 Intent intent = new Intent(me, DataLoggerActivity.class);
                 intent.putExtra(DataLoggerActivity.SERIAL, serial);
                 startActivity(intent);
@@ -266,7 +319,7 @@ public class MainActivity extends AppCompatActivity implements AdapterView.OnIte
         mMds.put(timeUri, payload, new MdsResponseListener() {
             @Override
             public void onSuccess(String data) {
-                Log.i(LOG_TAG, "PUT /Time succesful: " + data);
+                Log.i(LOG_TAG, "PUT /Time successful: " + data);
             }
 
             @Override

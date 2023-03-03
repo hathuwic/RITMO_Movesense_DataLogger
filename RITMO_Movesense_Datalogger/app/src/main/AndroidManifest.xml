@@ -18,7 +18,8 @@
         <activity
             android:name=".DataLoggerActivity"
             android:label="@string/title_activity_datalogger"
-            android:theme="@style/AppTheme.NoActionBar" />
+            android:theme="@style/AppTheme.BackButton"
+            android:parentActivityName=".MainActivity"/>
     </application>
     <uses-permission android:name="android.permission.BLUETOOTH"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>

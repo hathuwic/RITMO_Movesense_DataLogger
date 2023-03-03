@@ -35,7 +35,7 @@ public class MdsLogbookEntriesResponse {
         }
 
         static SimpleDateFormat dateFormat = new SimpleDateFormat(
-                "yyyy-MM-dd HH:mm:ss");
+                "yyyy-MM-dd_HH-mm-ss");
 
         public String getDateStr() {
             return dateFormat.format(new Date(modificationTimestamp*1000));

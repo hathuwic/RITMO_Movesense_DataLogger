@@ -28,7 +28,7 @@
             android:backgroundTintMode="src_in"
             android:onClick="onScanStopClicked"
             android:text="Stop Scan"
-            android:visibility="visible" />
+            android:visibility="gone" />
 
         <Button
             android:id="@+id/buttonScan"
@@ -38,7 +38,7 @@
             android:backgroundTintMode="src_in"
             android:onClick="onScanClicked"
             android:text="Scan for sensors"
-            android:visibility="gone" />
+            android:visibility="visible" />
 
     </LinearLayout>
 

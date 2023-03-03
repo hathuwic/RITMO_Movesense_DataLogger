@@ -34,6 +34,6 @@ class MyScanResult {
     }
 
     public String toString() {
-        return (isConnected()?"*** ":"") + macAddress + " - " + name + " [" + rssi + "]" + (isConnected()?" ***":"");
+        return (isConnected()?"CONNECTED: ":"") + macAddress + " - " + name + " [" + rssi + "]";
     }
 }

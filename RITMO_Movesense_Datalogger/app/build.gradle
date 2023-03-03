@@ -8,7 +8,7 @@ android {
 
         targetSdkVersion 25
         versionCode 1
-        versionName "0.2.10"
+        versionName "0.3.6"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
         archivesBaseName = "RITMO_Movesense_DataLogger-$versionName"
     }

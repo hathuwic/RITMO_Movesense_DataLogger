@@ -576,32 +576,40 @@ public class DataLoggerActivity extends AppCompatActivity
         findViewById(R.id.headerProgress).setVisibility(View.VISIBLE);
         // GET the /MDS/Logbook/Data proxy
         String logDataUri = MessageFormat.format(URI_MDS_LOGBOOK_DATA, connectedSerial, id);
+        Toast.makeText(DataLoggerActivity.this, "logDataUri: " + logDataUri, Toast.LENGTH_SHORT).show();
         final Context me = this;
         final long logGetStartTimestamp = new Date().getTime();
 
+        // HERE is where it actually triggers pulling data from the sensor i.e., where the issue is.
         getMDS().get(logDataUri, null, new MdsResponseListener() {
             @Override
             public void onSuccess(final String data) {
-                final long logGetEndTimestamp = new Date().getTime();
-                // Actually gets the Logbook entry
-                MdsLogbookEntriesResponse.LogEntry entry = findLogEntry(id);
-                final float speedKBps = (float)entry.size / (logGetEndTimestamp-logGetStartTimestamp) / 1024.0f * 1000.f;
+                // Print to check if data has been retrieved by this point - YES IT HAS
+                Toast.makeText(DataLoggerActivity.this, data.substring(0,100), Toast.LENGTH_SHORT).show();
 
+                final long logGetEndTimestamp = new Date().getTime();
+                // Actually gets the Logbook entry for checking size, download speed, etc.
+                MdsLogbookEntriesResponse.LogEntry entry = findLogEntry(id);
+                final float speedKBps = ((float)entry.size / 1024) / ((float)(logGetEndTimestamp-logGetStartTimestamp) / 1000);
+                final float downloadTime = (float)(logGetEndTimestamp - logGetStartTimestamp) / 1000;
+
+                // Has downloaded the data from sensor by here
                 Log.i(LOG_TAG, "GET Log Data successful. size: " + entry.size + ", speed: " + speedKBps);
-//                Toast.makeText(DataLoggerActivity.this,
-//                        "GET Log Data successful. size: " + entry.size + ", speed: " + speedKBps,
-//                        Toast.LENGTH_SHORT).show();
+                Toast.makeText(DataLoggerActivity.this,
+                        "GET Log Data successful. size: " + entry.size + ", speed: " + speedKBps,
+                        Toast.LENGTH_SHORT).show();
 
                 // Creating sample of data for presentation in message box
                 String snippet;
                 if (data.length() > 0) { snippet = data.substring(0,25); }
-                else { snippet = "Data does not contain data: " + data.length(); }
+                else { snippet = "Data variable does not contain any data: " + data.length(); }
 
                 // Building string for message in message box
                 final String message = new StringBuilder()
                         .append("Downloaded log #").append(id).append(" from Movesense ").append(connectedSerial).append(".")
-                        .append("\n").append("Size: ").append(entry.size).append(" bytes")
+                        .append("\n").append("\n").append("Size: ").append(entry.size).append(" bytes")
                         .append("\n").append("Speed: ").append(speedKBps).append(" kB/s")
+                        .append("\n").append("Downloaded in: ").append(downloadTime).append(" s")
                         .append("\n").append("Data snippet: ").append(snippet)
                         .append("\n").append("\n").append("File will be saved in the location you choose.")
                         .toString();
@@ -665,7 +673,7 @@ public class DataLoggerActivity extends AppCompatActivity
             OutputStreamWriter myOutWriter = new OutputStreamWriter(out);
 
             // Write in pieces in case the file is big
-            final int BLOCK_SIZE= 4096;
+            final int BLOCK_SIZE= 1024;
             for (int startIdx=0;startIdx<data.length();startIdx+=BLOCK_SIZE) {
                 int endIdx = Math.min(data.length(), startIdx + BLOCK_SIZE);
                 myOutWriter.write(data.substring(startIdx, endIdx));
@@ -680,6 +688,7 @@ public class DataLoggerActivity extends AppCompatActivity
         catch (IOException e)
         {
             Log.e(LOG_TAG, "File write failed: ", e);
+            Toast.makeText(DataLoggerActivity.this, "In writeDataToFile(), file write failed: " + e, Toast.LENGTH_LONG).show();
         }
 
         // re-scan files so that they get visible in Windows

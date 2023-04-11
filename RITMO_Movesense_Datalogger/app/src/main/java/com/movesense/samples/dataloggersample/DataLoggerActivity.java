@@ -14,6 +14,7 @@ import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -21,14 +22,21 @@ import android.widget.Toast;
 import com.google.gson.Gson;
 import com.movesense.mds.Mds;
 import com.movesense.mds.MdsException;
+import com.movesense.mds.MdsNotificationListener;
 import com.movesense.mds.MdsResponseListener;
+import com.movesense.mds.MdsSubscription;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Map;
 import java.util.Objects;
 
 import io.reactivex.disposables.Disposable;
@@ -44,6 +52,8 @@ public class DataLoggerActivity extends AppCompatActivity
     private static final String URI_LOGBOOK_ENTRIES = "suunto://{0}/Mem/Logbook/Entries";
     private static final String URI_DATALOGGER_STATE = "suunto://{0}/Mem/DataLogger/State";
     private static final String URI_DATALOGGER_CONFIG = "suunto://{0}/Mem/DataLogger/Config";
+    public static final String URI_EVENTLISTENER = "suunto://MDS/EventListener";
+    private static final String URI_LOGBOOK_DATA = "/Mem/Logbook/byId/{0}/Data";
 
     static DataLoggerActivity s_INSTANCE = null;
     private static final String LOG_TAG = DataLoggerActivity.class.getSimpleName();
@@ -568,15 +578,232 @@ public class DataLoggerActivity extends AppCompatActivity
             return;
 
         MdsLogbookEntriesResponse.LogEntry entry = mLogEntriesArrayList.get(position);
-        fetchLogEntry(entry.id);
+
+
+        AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(this)
+                .setTitle("Choose Download Format: Json/RAW")
+                .setMessage("Json uses a lot of RAM on phone (may crash if runs out), RAW you need to convert with sbem2json or your own parser afterwards.")
+                .setPositiveButton("Json", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                fetchLogEntry(entry.id, false);
+                            }
+                        }
+                )
+                .setNeutralButton("RAW", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                fetchLogEntry(entry.id, true);
+                            }
+                        }
+                );
+        alertDialogBuilder.show();
     }
 
-    // Gets the log entry to write to file
-    private void fetchLogEntry(final int id) {
+    private void fetchLogEntry(final int id, boolean bRAW) {
+        findViewById(R.id.headerProgress).setVisibility(View.VISIBLE);
+
+        final MdsLogbookEntriesResponse.LogEntry entry = findLogEntry(id);
+
+        final ProgressBar progressBar = (ProgressBar) findViewById(R.id.progressBar);
+        progressBar.setIndeterminate(!bRAW);
+
+        if (!bRAW) {
+            fetchLogWithMDSProxy(id, entry);
+        }
+        else {
+            fetchLogWithLogbookDataSub(id, entry);
+        }
+    }
+
+    private MdsSubscription dataSub;
+    private boolean bAlreadyLogSaved = false;
+    // Gets the logbook as RAW sbem format
+    private void fetchLogWithLogbookDataSub(int id, MdsLogbookEntriesResponse.LogEntry entry) {
+        // GET the /Mem/Logbook/ direct url
+        String logDataResourceUri = MessageFormat.format(URI_LOGBOOK_DATA, id);
+        StringBuilder sb = new StringBuilder();
+        String strContract = sb.append("{\"Uri\": \"").append(connectedSerial).append(logDataResourceUri).append("\"}").toString();
+        Log.d(LOG_TAG, strContract);
+
+        final Context me = this;
+        final long logGetStartTimestamp = new Date().getTime();
+        final long totalBytes = entry.size;
+        dataSub = null;
+        bAlreadyLogSaved = false;
+        final ProgressBar progressBar = (ProgressBar) findViewById(R.id.progressBar);
+        progressBar.setProgress(0);
+
+        final String filename =new StringBuilder()
+                .append("MovesenseLog_").append(id).append(" ")
+                .append(entry.getDateStr()).append(".sbem").toString();
+
+        File tempFile = null;
+        try {
+            tempFile = File.createTempFile("MovesenseSBEMLog", ".sbem", getExternalCacheDir());
+            Log.d(LOG_TAG, "tempFile: " + tempFile.getAbsolutePath());
+        } catch (IOException e) {
+            e.printStackTrace();
+            Log.e(LOG_TAG,"Error creating temp file", e);
+            return;
+        }
+        try {
+            final FileOutputStream fos = new FileOutputStream(tempFile);
+
+            File finalTempFile = tempFile;
+            dataSub = getMDS().subscribe(URI_EVENTLISTENER, strContract, new MdsNotificationListener() {
+                private long receivedBytes=0;
+                @Override
+                public void onNotification(String dataJson) {
+                    Log.d(LOG_TAG,"DataNotification Json: " + dataJson);
+                    Gson gson = new Gson();
+                    Map map = gson.fromJson(dataJson, Map.class);
+                    Map body = (Map)map.get("Body");
+                    long startOffset = ((Double)body.get("offset")).longValue();
+                    ArrayList<Double> dataArray =(ArrayList<Double>) body.get("bytes");
+                    if (startOffset > totalBytes)
+                    {
+                        // Some data was skipped, show error and unsubscribe
+                        Log.e(LOG_TAG, "DATA SKIPPED. finishing...");
+                        dataSub.unsubscribe();
+                        findViewById(R.id.headerProgress).setVisibility(View.GONE);
+                    }
+                    if (dataArray.size() == 0) {
+                        // Close file
+                        try {
+                            fos.close();
+                        } catch (IOException e) {
+                            Log.e(LOG_TAG, "Error closing temp file", e);
+                        }
+
+                        if (bAlreadyLogSaved)
+                            return;
+
+                        // Log end marker. Finish and show save dialog
+                        dataSub.unsubscribe();
+
+                        findViewById(R.id.headerProgress).setVisibility(View.GONE);
+                        final long logGetEndTimestamp = new Date().getTime();
+                        final float speedKBps = (float) entry.size / (logGetEndTimestamp-logGetStartTimestamp) / 1024.0f * 1000.f;
+                        Log.i(LOG_TAG, "GET Log Data succesful. size: " + entry.size + ", speed: " + speedKBps);
+
+                        // Building string for message in message box
+                        final String message = new StringBuilder()
+                                .append("Downloaded log #").append(id).append(" from Movesense ").append(connectedSerial).append(" as RAW.")
+                                .append("\n").append("\n").append("Size: ").append(entry.size).append(" bytes")
+                                .append("\n").append("Speed: ").append(speedKBps).append(" kB/s")
+                                .append("\n").append("\n").append("File will be saved in the location you choose.")
+                                .toString();
+
+                        AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(me)
+                                .setTitle("Save Log Data to Device")
+                                .setMessage(message).setPositiveButton("Save to Device", new DialogInterface.OnClickListener() {
+                                            @Override
+                                            public void onClick(DialogInterface dialog, int which) {
+                                                saveLogToFile_SBEM(finalTempFile, filename);
+                                            }
+                                        }
+                                );
+
+                        findViewById(R.id.headerProgress).setVisibility(View.GONE);
+                        alertDialogBuilder.show();
+
+                        bAlreadyLogSaved = true;
+                    }
+                    else
+                    {
+
+                        try {
+                            for(Double d : dataArray)
+                            {
+                                byte b = (byte)d.intValue();
+                                fos.write(b);
+                            }
+                        } catch (IOException e) {
+                            Log.e(LOG_TAG,"Error writing data to file", e);
+                            dataSub.unsubscribe();
+                            findViewById(R.id.headerProgress).setVisibility(View.GONE);
+                            return;
+                        }
+                        receivedBytes += dataArray.size();
+                        long percent = receivedBytes * 100 / totalBytes;
+                        progressBar.setProgress((int)percent);
+                    }
+                }
+
+                @Override
+                public void onError(MdsException e) {
+                    Log.e(LOG_TAG, "GET Log Data returned error: " + e);
+                    findViewById(R.id.headerProgress).setVisibility(View.GONE);
+                }
+            });
+        } catch (IOException e) {
+            Log.e(LOG_TAG,"Error writing to temp file", e);
+            return;
+        }
+    }
+
+    // COPIED FROM UPDATED DATALOGGER SOURCE CODE v1.4
+    private void fetchLogWithMDSProxy(int id, MdsLogbookEntriesResponse.LogEntry entry) {
+        // GET the /MDS/Logbook/Data proxy
+        String logDataUri = MessageFormat.format(URI_MDS_LOGBOOK_DATA, connectedSerial, id);
+        final Context me = this;
+        final long logGetStartTimestamp = new Date().getTime();
+
+        final String filename =new StringBuilder()
+                .append("MovesenseLog_").append(id).append(" ")
+                .append(entry.getDateStr()).append(".json").toString();
+
+        // MDS stores downloaded files in android Files-dir
+        final File tempFile = new File(this.getFilesDir(), filename);
+
+        // Use ToFile parameter to save directly to file and do streaming json conversion (saves memory)
+        final String strGetLogDataParameters = "{\"ToFile\":\"" + filename + "\"}";
+
+        getMDS().get(logDataUri, strGetLogDataParameters, new MdsResponseListener() {
+            @Override
+            public void onSuccess(final String data) {
+                final long logGetEndTimestamp = new Date().getTime();
+                final float speedKBps = (float) entry.size / (logGetEndTimestamp-logGetStartTimestamp) / 1024.0f * 1000.f;
+                Log.i(LOG_TAG, "GET Log Data successful. size: " + entry.size + ", speed: " + speedKBps);
+
+                // Building string for message in message box
+                final String message = new StringBuilder()
+                        .append("Downloaded log #").append(id).append(" from Movesense ").append(connectedSerial).append(" as JSON.")
+                        .append("\n").append("\n").append("Size: ").append(entry.size).append(" bytes")
+                        .append("\n").append("Speed: ").append(speedKBps).append(" kB/s")
+                        .append("\n").append("\n").append("File will be saved in the location you choose.")
+                        .toString();
+
+                AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(me)
+                        .setTitle("Save Log Data to Device")
+                        .setMessage(message).setPositiveButton("Save to Device", new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface dialog, int which) {
+                                        saveLogToFile_Json(tempFile, filename);
+                                    }
+                                }
+                        );
+
+                findViewById(R.id.headerProgress).setVisibility(View.GONE);
+                alertDialogBuilder.show();
+            }
+
+            @Override
+            public void onError(MdsException e) {
+                Log.e(LOG_TAG, "GET Log Data returned error: " + e);
+                Toast.makeText(DataLoggerActivity.this, "In fetchLogEntry(): GET Log Data returned error: " + e, Toast.LENGTH_LONG).show();
+                findViewById(R.id.headerProgress).setVisibility(View.GONE);
+            }
+        });
+    }
+
+/*    // OLD VERSION: Gets the log entry to write to file
+    private void fetchLogWithMDSProxyOLD(int id, MdsLogbookEntriesResponse.LogEntry entry) {
         findViewById(R.id.headerProgress).setVisibility(View.VISIBLE);
         // GET the /MDS/Logbook/Data proxy
         String logDataUri = MessageFormat.format(URI_MDS_LOGBOOK_DATA, connectedSerial, id);
-        Toast.makeText(DataLoggerActivity.this, "logDataUri: " + logDataUri, Toast.LENGTH_SHORT).show();
+        // Toast.makeText(DataLoggerActivity.this, "logDataUri: " + logDataUri, Toast.LENGTH_SHORT).show();
         final Context me = this;
         final long logGetStartTimestamp = new Date().getTime();
 
@@ -619,12 +846,13 @@ public class DataLoggerActivity extends AppCompatActivity
                         .append("RITMO_MovesenseLog_ID-").append(id).append("_")
                         .append(connectedSerial).append("_")
                         .append(entry.getDateStr()).toString();
+
                 AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(me)
                         .setTitle("Save Log Data to Device")
                         .setMessage(message).setPositiveButton("Save to Device", new DialogInterface.OnClickListener() {
                                     @Override
                                     public void onClick(DialogInterface dialog, int which) {
-                                        saveLogToFile(filename, data);
+                                        saveLogToFile_Json(filename, data);
                                     }
                                 }
                         );
@@ -640,69 +868,72 @@ public class DataLoggerActivity extends AppCompatActivity
                 findViewById(R.id.headerProgress).setVisibility(View.GONE);
             }
         });
-    }
+    }*/
 
-    private String mDataToWriteFile;
+    private File mDataFileToCopy;
     private static int CREATE_FILE = 1;
-    
+
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent resultData) {
         if (requestCode == CREATE_FILE
                 && resultCode == Activity.RESULT_OK) {
             // The result data contains a URI for the document or directory that
-            // the user selected.
+            // the user selected. The original filename is in mDataFilenameToWriteFile
             Uri uri = null;
             if (resultData != null) {
-//                Toast.makeText(DataLoggerActivity.this, "resultData != null: " + resultData, Toast.LENGTH_SHORT).show();
                 uri = resultData.getData();
-                writeDataToFile(uri, mDataToWriteFile);
-                mDataToWriteFile = null;
+                copyFileToFileUri(uri, mDataFileToCopy);
+                mDataFileToCopy = null;
+
             }
         }
     }
-    private void writeDataToFile(Uri uri, String data)
+    private void copyFileToFileUri(Uri outputUri, File inputFile)
     {
-        // Save data to the file
-        Log.d(LOG_TAG, "Writing data to uri: " + uri);
-        // Toast.makeText(DataLoggerActivity.this, "Writing data to uri: " + uri, Toast.LENGTH_LONG).show();
-        // Toast.makeText(DataLoggerActivity.this, data.substring(0,25), Toast.LENGTH_LONG).show();
+        // Save data to the selected output file
+        Log.d(LOG_TAG, "Copying file data from " + inputFile.getAbsolutePath() + " to uri: " + outputUri);
 
         try
         {
-            OutputStream out = getContentResolver().openOutputStream(uri);
-            OutputStreamWriter myOutWriter = new OutputStreamWriter(out);
+            OutputStream outputStream = getContentResolver().openOutputStream(outputUri);
 
+            InputStream inputStream = new FileInputStream(inputFile);
             // Write in pieces in case the file is big
-            final int BLOCK_SIZE= 1024;
-            for (int startIdx=0;startIdx<data.length();startIdx+=BLOCK_SIZE) {
-                int endIdx = Math.min(data.length(), startIdx + BLOCK_SIZE);
-                myOutWriter.write(data.substring(startIdx, endIdx));
+            final int BLOCK_SIZE= 4096;
+            byte buffer[] = new byte[BLOCK_SIZE];
+            int length;
+            int total=0;
+            while((length=inputStream.read(buffer)) > 0) {
+                outputStream.write(buffer,0,length);
+                total += length;
+                Log.d(LOG_TAG, "Bytes written: " + total);
             }
 
-            myOutWriter.flush();
-            myOutWriter.close();
+            outputStream.close();
+            inputStream.close();
 
-            out.flush();
-            out.close();
+        } catch (IOException e) {
+            Log.e(LOG_TAG, "error in creating a file:", e);
+            e.printStackTrace();
         }
-        catch (IOException e)
-        {
-            Log.e(LOG_TAG, "File write failed: ", e);
-            Toast.makeText(DataLoggerActivity.this, "In writeDataToFile(), file write failed: " + e, Toast.LENGTH_LONG).show();
+        finally {
+            inputFile.delete();
         }
-
-        // re-scan files so that they get visible in Windows
-        //MediaScannerConnection.scanFile(this, new String[]{file.getAbsolutePath()}, null, null);
     }
 
-    private void saveLogToFile(String filename, String data) {
-        mDataToWriteFile = data;
-//        Toast.makeText(DataLoggerActivity.this, "mDataToWriteFile in saveLogToFile(): " + mDataToWriteFile.substring(0,100), Toast.LENGTH_SHORT).show();
-        // Add extension to filename if it doesn't have yet
-        if (!filename.endsWith(".json"))
-        {
-            filename = filename + ".json";
-        }
+    private void saveLogToFile_SBEM(File file, String filename) {
+        mDataFileToCopy = file;
+
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octetstream");
+        intent.putExtra(Intent.EXTRA_TITLE, filename);
+
+        startActivityForResult(intent, CREATE_FILE);
+    }
+
+    private void saveLogToFile_Json(File file, String filename) {
+        mDataFileToCopy = file;
 
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);

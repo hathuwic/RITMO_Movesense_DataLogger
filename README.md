@@ -12,3 +12,5 @@ This version adds the following functionality:
 - UI improvements
 
 Based on version 1.4 from Movesense, therefore this includes the option to download logged data from devices as raw SBEM files, as well as JSON.
+
+Currently only supports logging of IMU at 208Hz and ECG at 500Hz. Other combinations of sensors can be added in res ➔ valyes ➔ strings.xml (required rebuild of app from source code).

@@ -7,6 +7,8 @@ An adapted version of the Movesense DataLogger sample app found [here](https://b
 ## Functionality
 
 This version adds the following functionality:
-- Logging multiple devices from the same app.
-- Disconnect from connected devices on scan (avoids need for phone restart in order for Movesense device to be visible)
+- Logging multiple devices from the same app
+- Disconnect from connected devices on start scan (avoids need for phone restart in order for Movesense device to be visible again)
 - UI improvements
+
+Based on version 1.4 from Movesense, therefore this includes the option to download logged data from devices as raw SBEM files, as well as JSON.

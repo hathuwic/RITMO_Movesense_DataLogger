@@ -66,7 +66,7 @@ public class DataLoggerActivity extends AppCompatActivity
     private TextView mDataLoggerStateTextView;
 
     // The delimiter between different addresses when recording multiple streams
-    private static final String delimiter = ":";
+    private static final String delimiter = ", ";
     private boolean isLogging = false;
 
     private String currentConfigPath;
@@ -187,7 +187,7 @@ public class DataLoggerActivity extends AppCompatActivity
 //                    entries = entries.add(new DataLoggerConfig[]{new DataLoggerConfig.DataEntry(entryString)});
 //                }
             entries = new DataLoggerConfig.DataEntry[]{new DataLoggerConfig.DataEntry(mDLConfigPath.substring(0, mDLConfigPath.indexOf(delimiter))),
-                      new DataLoggerConfig.DataEntry(mDLConfigPath.substring(mDLConfigPath.indexOf(delimiter) + 1))};
+                      new DataLoggerConfig.DataEntry(mDLConfigPath.substring(mDLConfigPath.indexOf(delimiter) + delimiter.length()))};
         }
 
         else {

@@ -9,11 +9,25 @@
     <string name="refresh_logbook_list">Refresh logbook list</string>
     <string-array name="datalogger_paths">
         <item>Select a path...</item>
+        <item>/Meas/Acc/26</item>
+        <item>/Meas/Acc/52</item>
+        <item>/Meas/Acc/104</item>
+        <item>/Meas/Acc/208</item>
+        <item>/Meas/IMU9/26</item>
         <item>/Meas/IMU9/52</item>
+        <item>/Meas/IMU9/104</item>
         <item>/Meas/IMU9/208</item>
-        <item>/Meas/ECG/500</item>
-        <item>/Meas/IMU9/208:/Meas/ECG/500</item>
-
+        <item>/Meas/ECG/50</item>
+        <item>/Meas/ECG/100</item>
+        <item>/Meas/ECG/200</item>
+        <item>/Meas/Acc/26, /Meas/ECG/50</item>
+        <item>/Meas/Acc/52, /Meas/ECG/50</item>
+        <item>/Meas/Acc/104, /Meas/ECG/100</item>
+        <item>/Meas/Acc/208, /Meas/ECG/200</item>
+        <item>/Meas/IMU9/26, /Meas/ECG/50</item>
+        <item>/Meas/IMU9/52, /Meas/ECG/50</item>
+        <item>/Meas/IMU9/104, /Meas/ECG/100</item>
+        <item>/Meas/IMU9/208, /Meas/ECG/200</item>
     </string-array>
 </resources>
 
